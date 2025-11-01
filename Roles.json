@@ -1,0 +1,73 @@
+{
+  "rules": {
+    "devices": {
+      "$dev": {
+        ".read": "auth != null",
+        // ESP32 firmware (e-mail) vagy admin írhat állapotot
+        ".write": "auth != null && (
+          auth.token.email == 'esp32device@default.com' ||
+          root.child('roles').child(auth.uid).child($dev).child('admin').val() == true
+        )",
+        "state": {
+          ".validate": "newData.hasChildren(['lockA','lockB','lastUpdate']) &&
+                        newData.child('lockA').isBoolean() &&
+                        newData.child('lockB').isBoolean() &&
+                        newData.child('lastUpdate').isNumber()"
+        },
+        "online": { ".validate": "newData.isBoolean()" }
+      }
+    },
+
+    "commands": {
+      "$dev": {
+        ".read": "auth != null",
+        "lastCmd": {
+          // Írás feltétele: target-nek érvényes érték, pulseMs korlát,
+          // és a KÜLDŐNEK legyen joga az adott célhoz.
+          ".write": "auth != null && newData.hasChildren(['target','pulseMs','issuedBy','done']) &&
+            newData.child('target').isString() &&
+            (newData.child('target').val() in ['A','B','BOTH']) &&
+            newData.child('pulseMs').isNumber() &&
+            newData.child('pulseMs').val() >= 100 &&
+            newData.child('pulseMs').val() <= 1200 &&
+            newData.child('issuedBy').val() == auth.uid &&
+            (
+              // admin mindent
+              root.child('roles').child(auth.uid).child($dev).child('admin').val() == true ||
+
+              // A célhoz való jog
+              (newData.child('target').val() == 'A' && root.child('roles').child(auth.uid).child($dev).child('A').val() == true) ||
+              (newData.child('target').val() == 'B' && root.child('roles').child(auth.uid).child($dev).child('B').val() == true) ||
+
+              // BOTH csak admin - ez a feltétel felülírja a fenti A/B-t
+              (newData.child('target').val() == 'BOTH' && root.child('roles').child(auth.uid).child($dev).child('admin').val() == true)
+            )",
+
+          // ESP32 visszaigazolhatja a parancsot (done: true)
+          "done": {
+            ".write": "auth != null && auth.token.email == 'esp32device@default.com'",
+            ".validate": "newData.isBoolean()"
+          }
+        }
+      }
+    },
+
+    "roles": {
+      // Saját szerep olvasható, admin mindenkiét olvashatja
+      "$uid": {
+        "$dev": {
+          ".read": "auth != null && (auth.uid == $uid ||
+                   root.child('roles').child(auth.uid).child($dev).child('admin').val() == true)",
+          ".write": false
+        }
+      }
+    },
+
+    "rfidWhitelist": {
+      "$dev": {
+        ".read": "auth != null && root.child('roles').child(auth.uid).child($dev).child('admin').val() == true",
+        ".write": "auth != null && root.child('roles').child(auth.uid).child($dev).child('admin').val() == true"
+      }
+    }
+  }
+}
